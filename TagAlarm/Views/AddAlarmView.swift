@@ -55,9 +55,16 @@ struct AddAlarmView: View {
                             .foregroundStyle(.secondary)
                             .font(.subheadline)
                     } else {
-                        ForEach(alarm.checkpointIDs, id: \.self) { cpID in
+                        ForEach(Array(alarm.checkpointIDs.enumerated()), id: \.element) { index, cpID in
                             if let cp = alarmManager.checkpoint(for: cpID) {
-                                HStack {
+                                HStack(spacing: 10) {
+                                    Text("\(index + 1)")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(.white)
+                                        .frame(width: 22, height: 22)
+                                        .background(Color.orange)
+                                        .clipShape(Circle())
+
                                     Image(systemName: cp.icon)
                                         .foregroundStyle(.orange)
                                     Text(cp.name)
@@ -67,6 +74,8 @@ struct AddAlarmView: View {
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
+                                    Image(systemName: "line.3.horizontal")
+                                        .foregroundStyle(.tertiary)
                                 }
                             }
                         }
@@ -98,7 +107,7 @@ struct AddAlarmView: View {
                 } header: {
                     Text("NFC Checkpoints")
                 } footer: {
-                    Text("Add checkpoints to require NFC tag scans to dismiss this alarm. Order matters — you must scan them in sequence.")
+                    Text("Drag to reorder. You must scan them in this sequence to dismiss the alarm.")
                 }
 
                 // Delete
