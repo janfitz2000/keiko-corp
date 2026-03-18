@@ -19,12 +19,27 @@ struct AlarmListView: View {
                     .frame(maxHeight: .infinity)
                 } else {
                     List {
+                        // Notification warning
+                        if !alarmManager.notificationsEnabled {
+                            notificationWarning
+                        }
+
                         ForEach(alarmManager.alarms) { alarm in
                             AlarmRow(alarm: alarm)
                                 .contentShape(Rectangle())
                                 .onTapGesture { editingAlarm = alarm }
                         }
                         .onDelete(perform: alarmManager.deleteAlarm)
+                    }
+                }
+            }
+            .overlay {
+                // Show warning even on empty state
+                if alarmManager.alarms.isEmpty && !alarmManager.notificationsEnabled {
+                    VStack {
+                        notificationWarning
+                            .padding()
+                        Spacer()
                     }
                 }
             }
@@ -43,6 +58,32 @@ struct AlarmListView: View {
                 AddAlarmView(existing: alarm)
             }
         }
+    }
+
+    private var notificationWarning: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.yellow)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Notifications disabled")
+                    .font(.subheadline.bold())
+                Text("Alarms won't fire. Enable in Settings.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Fix") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            .font(.subheadline.bold())
+            .foregroundStyle(.orange)
+        }
+        .padding(12)
+        .background(Color.yellow.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
     }
 }
 

@@ -15,9 +15,10 @@ class NFCManager: NSObject, ObservableObject {
 
     func scan(message: String = "Hold your iPhone near the NFC tag", completion: @escaping (String) -> Void) {
         guard isAvailable else {
-            errorMessage = "NFC not available on this device"
+            errorMessage = "NFC is not available on this device"
             return
         }
+        guard !isScanning else { return }
 
         onScan = completion
         session = NFCTagReaderSession(pollingOption: [.iso14443, .iso15693], delegate: self, queue: nil)
@@ -34,15 +35,22 @@ extension NFCManager: NFCTagReaderSessionDelegate {
     func tagReaderSession(_ session: NFCTagReaderSession, didInvalidateWithError error: Error) {
         DispatchQueue.main.async {
             self.isScanning = false
-            if let nfcError = error as? NFCReaderError, nfcError.code != .readerSessionInvalidationErrorUserCanceled {
-                self.errorMessage = error.localizedDescription
+            if let nfcError = error as? NFCReaderError {
+                switch nfcError.code {
+                case .readerSessionInvalidationErrorUserCanceled:
+                    break // user dismissed, no error
+                case .readerSessionInvalidationErrorSessionTimeout:
+                    self.errorMessage = "Scan timed out. Tap to try again."
+                default:
+                    self.errorMessage = error.localizedDescription
+                }
             }
         }
     }
 
     func tagReaderSession(_ session: NFCTagReaderSession, didDetect tags: [NFCTag]) {
         guard let tag = tags.first else {
-            session.invalidate(errorMessage: "No tag found")
+            session.invalidate(errorMessage: "No tag found. Try again.")
             return
         }
 
@@ -55,7 +63,7 @@ extension NFCManager: NFCTagReaderSessionDelegate {
             let tagID = self?.extractTagID(from: tag) ?? ""
 
             if tagID.isEmpty {
-                session.invalidate(errorMessage: "Could not read tag")
+                session.invalidate(errorMessage: "Could not read this tag.")
                 return
             }
 
@@ -65,6 +73,7 @@ extension NFCManager: NFCTagReaderSessionDelegate {
             DispatchQueue.main.async {
                 self?.lastTagID = tagID
                 self?.isScanning = false
+                self?.errorMessage = nil
                 self?.onScan?(tagID)
             }
         }

@@ -1,6 +1,13 @@
 import Foundation
 import UserNotifications
+import UIKit
 import Combine
+
+enum ScanResult {
+    case success
+    case wrongTag
+    case holdReset
+}
 
 @MainActor
 class AlarmManager: ObservableObject {
@@ -15,6 +22,12 @@ class AlarmManager: ObservableObject {
     @Published var isAlarmSounding: Bool = false
     @Published var holdTimeRemaining: TimeInterval = 0
     @Published var activeHoldCheckpointID: UUID?
+
+    // Scan feedback
+    @Published var lastScanResult: ScanResult?
+
+    // Notification permission
+    @Published var notificationsEnabled: Bool = true
 
     // MARK: - Private
 
@@ -36,6 +49,16 @@ class AlarmManager: ObservableObject {
         load()
         setupNotifications()
         restoreActiveAlarm()
+        checkNotificationPermission()
+
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.checkNotificationPermission()
+            }
+        }
     }
 
     // MARK: - Persistence
@@ -90,10 +113,24 @@ class AlarmManager: ObservableObject {
     private func restoreActiveAlarm() {
         guard let data = try? Data(contentsOf: activeAlarmURL),
               let state = try? JSONDecoder().decode(ActiveAlarmState.self, from: data),
-              let alarm = alarms.first(where: { $0.id == state.alarmID })
-        else { return }
+              let alarm = alarms.first(where: { $0.id == state.alarmID }),
+              alarm.isEnabled,
+              state.checkpointIndex <= alarm.checkpointIDs.count
+        else {
+            // Clear stale state file
+            try? FileManager.default.removeItem(at: activeAlarmURL)
+            return
+        }
 
-        // Re-trigger the alarm — user killed the app to try to escape
+        // Validate all remaining checkpoints still exist
+        let remaining = alarm.checkpointIDs.dropFirst(state.checkpointIndex)
+        let allExist = remaining.allSatisfy { cpID in checkpoints.contains { $0.id == cpID } }
+        guard allExist else {
+            try? FileManager.default.removeItem(at: activeAlarmURL)
+            return
+        }
+
+        // Re-trigger — user killed the app to try to escape
         activeAlarm = alarm
         currentCheckpointIndex = state.checkpointIndex
         activeHoldCheckpointID = state.holdCheckpointID
@@ -173,6 +210,7 @@ class AlarmManager: ObservableObject {
         currentCheckpointIndex = 0
         activeHoldCheckpointID = nil
         holdTimeRemaining = 0
+        lastScanResult = nil
         isAlarmSounding = true
         audioManager.playAlarm(sound: alarm.sound)
         persistActiveAlarm()
@@ -189,15 +227,30 @@ class AlarmManager: ObservableObject {
             resetHoldTimer(minutes: holdCP.holdMinutes)
             audioManager.stop()
             isAlarmSounding = false
+            lastScanResult = .holdReset
+            haptic(.success)
+            clearScanResultAfterDelay()
             return
         }
 
         // Check if it matches the current checkpoint
         guard currentCheckpointIndex < alarm.checkpointIDs.count else { return }
         let currentID = alarm.checkpointIDs[currentCheckpointIndex]
-        guard let cp = checkpoint(for: currentID), cp.nfcTagID == tagID else { return }
+        guard let cp = checkpoint(for: currentID) else { return }
+
+        if cp.nfcTagID != tagID {
+            // Wrong tag!
+            lastScanResult = .wrongTag
+            haptic(.error)
+            clearScanResultAfterDelay()
+            return
+        }
 
         // Checkpoint matched
+        lastScanResult = .success
+        haptic(.success)
+        clearScanResultAfterDelay()
+
         audioManager.stop()
         isAlarmSounding = false
         cancelHoldTimer()
@@ -233,7 +286,21 @@ class AlarmManager: ObservableObject {
         isAlarmSounding = false
         holdTimeRemaining = 0
         activeHoldCheckpointID = nil
-        persistActiveAlarm() // clears the file
+        lastScanResult = nil
+        persistActiveAlarm()
+    }
+
+    // MARK: - Scan Feedback
+
+    private func clearScanResultAfterDelay() {
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            lastScanResult = nil
+        }
+    }
+
+    private func haptic(_ type: UINotificationFeedbackGenerator.FeedbackType) {
+        UINotificationFeedbackGenerator().notificationOccurred(type)
     }
 
     // MARK: - Hold Timer
@@ -270,7 +337,19 @@ class AlarmManager: ObservableObject {
     private func setupNotifications() {
         let center = UNUserNotificationCenter.current()
         center.delegate = notificationDelegate
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, _ in
+            Task { @MainActor in
+                self?.notificationsEnabled = granted
+            }
+        }
+    }
+
+    func checkNotificationPermission() {
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+            Task { @MainActor in
+                self?.notificationsEnabled = settings.authorizationStatus == .authorized
+            }
+        }
     }
 
     func scheduleAllNotifications() {

@@ -4,23 +4,41 @@ struct ActiveAlarmView: View {
     @EnvironmentObject var alarmManager: AlarmManager
     @EnvironmentObject var nfcManager: NFCManager
 
+    // Live clock
+    @State private var currentTime = Date()
+    private let clockTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
+            // Wrong-tag flash overlay
+            if alarmManager.lastScanResult == .wrongTag {
+                Color.red.opacity(0.3)
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+            }
+
             VStack(spacing: 32) {
                 Spacer()
 
-                // Current time
-                Text(timeString)
+                // Live clock
+                Text(currentTime, format: .dateTime.hour().minute())
                     .font(.system(size: 64, weight: .thin, design: .rounded))
                     .foregroundStyle(.white)
+                    .onReceive(clockTimer) { currentTime = $0 }
 
                 // Alarm name
                 if let alarm = alarmManager.activeAlarm, !alarm.name.isEmpty {
                     Text(alarm.name)
                         .font(.title2)
                         .foregroundStyle(.white.opacity(0.7))
+                }
+
+                // Scan result feedback
+                if let result = alarmManager.lastScanResult {
+                    scanFeedback(result)
+                        .transition(.scale.combined(with: .opacity))
                 }
 
                 Spacer()
@@ -44,14 +62,47 @@ struct ActiveAlarmView: View {
             }
             .padding()
         }
+        .animation(.easeInOut(duration: 0.3), value: alarmManager.lastScanResult != nil)
     }
 
-    // MARK: - Time
+    // MARK: - Scan Feedback
 
-    private var timeString: String {
-        let f = DateFormatter()
-        f.dateFormat = "h:mm"
-        return f.string(from: Date())
+    @ViewBuilder
+    private func scanFeedback(_ result: ScanResult) -> some View {
+        switch result {
+        case .wrongTag:
+            HStack(spacing: 8) {
+                Image(systemName: "xmark.circle.fill")
+                Text("Wrong tag! Find the right one.")
+            }
+            .font(.headline)
+            .foregroundStyle(.red)
+            .padding()
+            .background(Color.red.opacity(0.15))
+            .clipShape(Capsule())
+
+        case .success:
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                Text("Checkpoint cleared!")
+            }
+            .font(.headline)
+            .foregroundStyle(.green)
+            .padding()
+            .background(Color.green.opacity(0.15))
+            .clipShape(Capsule())
+
+        case .holdReset:
+            HStack(spacing: 8) {
+                Image(systemName: "clock.arrow.circlepath")
+                Text("Timer reset — more time added")
+            }
+            .font(.headline)
+            .foregroundStyle(.orange)
+            .padding()
+            .background(Color.orange.opacity(0.15))
+            .clipShape(Capsule())
+        }
     }
 
     // MARK: - Checkpoint Progress
@@ -60,7 +111,7 @@ struct ActiveAlarmView: View {
     private func checkpointProgress(alarm: Alarm) -> some View {
         VStack(spacing: 12) {
             HStack(spacing: 8) {
-                ForEach(Array(alarm.checkpointIDs.enumerated()), id: \.offset) { index, cpID in
+                ForEach(Array(alarm.checkpointIDs.enumerated()), id: \.offset) { index, _ in
                     let done = index < alarmManager.currentCheckpointIndex
                     let current = index == alarmManager.currentCheckpointIndex
 
@@ -140,7 +191,6 @@ struct ActiveAlarmView: View {
     @ViewBuilder
     private func scanSection(alarm: Alarm) -> some View {
         if alarm.checkpointIDs.isEmpty {
-            // No checkpoints — simple dismiss (shouldn't normally happen, but fallback)
             Button {
                 alarmManager.dismissAlarm()
             } label: {
@@ -180,6 +230,7 @@ struct ActiveAlarmView: View {
                 .foregroundStyle(.white)
                 .clipShape(RoundedRectangle(cornerRadius: 20))
             }
+            .disabled(nfcManager.isScanning)
             .padding(.horizontal)
         }
     }
@@ -187,6 +238,8 @@ struct ActiveAlarmView: View {
     // MARK: - NFC
 
     private func scanForTag(completion: @escaping (String) -> Void) {
+        guard !nfcManager.isScanning else { return }
+
         let cpName: String = {
             guard let alarm = alarmManager.activeAlarm,
                   alarmManager.currentCheckpointIndex < alarm.checkpointIDs.count,

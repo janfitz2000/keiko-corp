@@ -33,7 +33,7 @@ enum Weekday: Int, Codable, CaseIterable, Comparable, Hashable {
     }
 
     static func < (lhs: Weekday, rhs: Weekday) -> Bool {
-        ordered.firstIndex(of: lhs)! < ordered.firstIndex(of: rhs)!
+        (ordered.firstIndex(of: lhs) ?? 0) < (ordered.firstIndex(of: rhs) ?? 0)
     }
 }
 
