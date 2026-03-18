@@ -105,7 +105,7 @@ struct AddAlarmView: View {
                 if isEditing {
                     Section {
                         Button("Delete Alarm", role: .destructive) {
-                            alarmManager.alarms.removeAll { $0.id == alarm.id }
+                            alarmManager.deleteAlarm(id: alarm.id)
                             dismiss()
                         }
                     }

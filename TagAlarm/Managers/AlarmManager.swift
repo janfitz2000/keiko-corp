@@ -22,21 +22,20 @@ class AlarmManager: ObservableObject {
     private var holdTimer: Timer?
     private let notificationDelegate = NotificationDelegate()
 
-    private var alarmsURL: URL {
+    private var docsDir: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("alarms.json")
     }
 
-    private var checkpointsURL: URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("checkpoints.json")
-    }
+    private var alarmsURL: URL { docsDir.appendingPathComponent("alarms.json") }
+    private var checkpointsURL: URL { docsDir.appendingPathComponent("checkpoints.json") }
+    private var activeAlarmURL: URL { docsDir.appendingPathComponent("active_alarm.json") }
 
     // MARK: - Init
 
     init() {
         load()
         setupNotifications()
+        restoreActiveAlarm()
     }
 
     // MARK: - Persistence
@@ -65,6 +64,43 @@ class AlarmManager: ObservableObject {
         }
     }
 
+    // MARK: - Active Alarm Persistence
+
+    private struct ActiveAlarmState: Codable {
+        let alarmID: UUID
+        let checkpointIndex: Int
+        let holdCheckpointID: UUID?
+    }
+
+    private func persistActiveAlarm() {
+        guard let alarm = activeAlarm else {
+            try? FileManager.default.removeItem(at: activeAlarmURL)
+            return
+        }
+        let state = ActiveAlarmState(
+            alarmID: alarm.id,
+            checkpointIndex: currentCheckpointIndex,
+            holdCheckpointID: activeHoldCheckpointID
+        )
+        if let data = try? JSONEncoder().encode(state) {
+            try? data.write(to: activeAlarmURL)
+        }
+    }
+
+    private func restoreActiveAlarm() {
+        guard let data = try? Data(contentsOf: activeAlarmURL),
+              let state = try? JSONDecoder().decode(ActiveAlarmState.self, from: data),
+              let alarm = alarms.first(where: { $0.id == state.alarmID })
+        else { return }
+
+        // Re-trigger the alarm — user killed the app to try to escape
+        activeAlarm = alarm
+        currentCheckpointIndex = state.checkpointIndex
+        activeHoldCheckpointID = state.holdCheckpointID
+        isAlarmSounding = true
+        audioManager.playAlarm(sound: alarm.sound)
+    }
+
     // MARK: - Alarm CRUD
 
     func addAlarm(_ alarm: Alarm) {
@@ -80,6 +116,11 @@ class AlarmManager: ObservableObject {
 
     func deleteAlarm(at offsets: IndexSet) {
         alarms.remove(atOffsets: offsets)
+        saveAlarms()
+    }
+
+    func deleteAlarm(id: UUID) {
+        alarms.removeAll { $0.id == id }
         saveAlarms()
     }
 
@@ -112,6 +153,15 @@ class AlarmManager: ObservableObject {
         saveAlarms()
     }
 
+    func deleteCheckpoint(id: UUID) {
+        checkpoints.removeAll { $0.id == id }
+        for i in alarms.indices {
+            alarms[i].checkpointIDs.removeAll { $0 == id }
+        }
+        saveCheckpoints()
+        saveAlarms()
+    }
+
     func checkpoint(for id: UUID) -> Checkpoint? {
         checkpoints.first { $0.id == id }
     }
@@ -125,6 +175,7 @@ class AlarmManager: ObservableObject {
         holdTimeRemaining = 0
         isAlarmSounding = true
         audioManager.playAlarm(sound: alarm.sound)
+        persistActiveAlarm()
     }
 
     /// Called when an NFC tag is scanned during an active alarm.
@@ -152,7 +203,6 @@ class AlarmManager: ObservableObject {
         cancelHoldTimer()
 
         if cp.isHold {
-            // This is a hold checkpoint — start the hold timer
             activeHoldCheckpointID = cp.id
             startHoldTimer(minutes: cp.holdMinutes)
         } else {
@@ -160,14 +210,22 @@ class AlarmManager: ObservableObject {
         }
 
         currentCheckpointIndex += 1
+        persistActiveAlarm()
 
-        // Check if all checkpoints cleared
         if currentCheckpointIndex >= alarm.checkpointIDs.count {
             dismissAlarm()
         }
     }
 
     func dismissAlarm() {
+        // Disable one-time alarms after they fire
+        if let alarm = activeAlarm, alarm.repeatDays.isEmpty {
+            if let i = alarms.firstIndex(where: { $0.id == alarm.id }) {
+                alarms[i].isEnabled = false
+                saveAlarms()
+            }
+        }
+
         audioManager.stop()
         cancelHoldTimer()
         activeAlarm = nil
@@ -175,6 +233,7 @@ class AlarmManager: ObservableObject {
         isAlarmSounding = false
         holdTimeRemaining = 0
         activeHoldCheckpointID = nil
+        persistActiveAlarm() // clears the file
     }
 
     // MARK: - Hold Timer
@@ -244,11 +303,9 @@ class AlarmManager: ObservableObject {
         let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: weekday != nil)
         let id = weekday != nil ? "\(alarm.id)-\(weekday!.rawValue)" : alarm.id.uuidString
 
-        center_add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
-    }
-
-    private func center_add(_ request: UNNotificationRequest) {
-        UNUserNotificationCenter.current().add(request)
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+        )
     }
 
     func handleNotification(alarmID: String) {

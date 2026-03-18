@@ -216,7 +216,7 @@ struct AddCheckpointView: View {
                         alarmManager.addCheckpoint(cp)
                         dismiss()
                     }
-                    .disabled(name.isEmpty)
+                    .disabled(name.isEmpty || nfcTagID.isEmpty)
                 }
             }
         }
@@ -296,7 +296,7 @@ struct EditCheckpointView: View {
 
             Section {
                 Button("Delete Checkpoint", role: .destructive) {
-                    alarmManager.checkpoints.removeAll { $0.id == checkpoint.id }
+                    alarmManager.deleteCheckpoint(id: checkpoint.id)
                     dismiss()
                 }
             }

@@ -20,7 +20,7 @@ class NFCManager: NSObject, ObservableObject {
         }
 
         onScan = completion
-        session = NFCTagReaderSession(pollingOption: [.iso14443, .iso15693], delegate: self)
+        session = NFCTagReaderSession(pollingOption: [.iso14443, .iso15693], delegate: self, queue: nil)
         session?.alertMessage = message
         session?.begin()
         isScanning = true
