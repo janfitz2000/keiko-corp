@@ -53,9 +53,9 @@ struct ActiveAlarmView: View {
                     holdTimerView
                 }
 
-                // Scan button
+                // Instruction or dismiss
                 if let alarm = alarmManager.activeAlarm {
-                    scanSection(alarm: alarm)
+                    instructionSection(alarm: alarm)
                 }
 
                 Spacer()
@@ -63,6 +63,34 @@ struct ActiveAlarmView: View {
             .padding()
         }
         .animation(.easeInOut(duration: 0.3), value: alarmManager.lastScanResult != nil)
+        .onAppear { startScanning() }
+        .onDisappear { nfcManager.stopContinuousScanning() }
+        .onChange(of: alarmManager.currentCheckpointIndex) { _, _ in updateScanMessage() }
+    }
+
+    // MARK: - Auto Scanning
+
+    private func startScanning() {
+        guard let alarm = alarmManager.activeAlarm,
+              alarmManager.currentCheckpointIndex < alarm.checkpointIDs.count
+        else { return }
+
+        let message = currentCheckpointMessage()
+        nfcManager.startContinuousScanning(message: message) { tagID in
+            alarmManager.onTagScanned(tagID)
+        }
+    }
+
+    private func updateScanMessage() {
+        nfcManager.updateMessage(currentCheckpointMessage())
+    }
+
+    private func currentCheckpointMessage() -> String {
+        guard let alarm = alarmManager.activeAlarm,
+              alarmManager.currentCheckpointIndex < alarm.checkpointIDs.count,
+              let cp = alarmManager.checkpoint(for: alarm.checkpointIDs[alarmManager.currentCheckpointIndex])
+        else { return "Hold near NFC tag" }
+        return "Hold near \(cp.name) tag"
     }
 
     // MARK: - Scan Feedback
@@ -143,31 +171,15 @@ struct ActiveAlarmView: View {
             Text("until alarm rings again")
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.5))
-
-            if let holdID = alarmManager.activeHoldCheckpointID,
-               let cp = alarmManager.checkpoint(for: holdID) {
-                Button {
-                    scanForTag { tagID in
-                        alarmManager.onTagScanned(tagID)
-                    }
-                } label: {
-                    Label("Re-scan \(cp.name) for more time", systemImage: "arrow.clockwise")
-                        .font(.subheadline)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 10)
-                        .background(Color.white.opacity(0.1))
-                        .foregroundStyle(.white)
-                        .clipShape(Capsule())
-                }
-            }
         }
     }
 
-    // MARK: - Scan Button
+    // MARK: - Instruction / Dismiss
 
     @ViewBuilder
-    private func scanSection(alarm: Alarm) -> some View {
+    private func instructionSection(alarm: Alarm) -> some View {
         if alarm.checkpointIDs.isEmpty {
+            // No checkpoints — simple dismiss
             Button {
                 alarmManager.dismissAlarm()
             } label: {
@@ -184,49 +196,32 @@ struct ActiveAlarmView: View {
             let cpID = alarm.checkpointIDs[alarmManager.currentCheckpointIndex]
             let cp = alarmManager.checkpoint(for: cpID)
 
-            Button {
-                scanForTag { tagID in
-                    alarmManager.onTagScanned(tagID)
-                }
-            } label: {
-                VStack(spacing: 8) {
-                    Image(systemName: "wave.3.right")
-                        .font(.system(size: 40))
-                        .symbolEffect(.variableColor.iterative, isActive: alarmManager.isAlarmSounding)
+            VStack(spacing: 12) {
+                // Pulsing NFC icon
+                Image(systemName: "wave.3.right")
+                    .font(.system(size: 40))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .symbolEffect(.variableColor.iterative, isActive: alarmManager.isAlarmSounding)
 
-                    Text("Scan \(cp?.name ?? "Tag")")
-                        .font(.title2.bold())
+                Text("Hold phone near **\(cp?.name ?? "tag")**")
+                    .font(.title3)
+                    .foregroundStyle(.white)
+
+                if !nfcManager.isScanning {
+                    // Scanner stopped (user dismissed NFC sheet) — show restart button
+                    Button {
+                        startScanning()
+                    } label: {
+                        Text("Tap to restart scanner")
+                            .font(.subheadline)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 10)
+                            .background(Color.white.opacity(0.15))
+                            .foregroundStyle(.white.opacity(0.7))
+                            .clipShape(Capsule())
+                    }
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
-                .background(
-                    alarmManager.isAlarmSounding
-                        ? Color.red
-                        : Color.orange
-                )
-                .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 20))
             }
-            .disabled(nfcManager.isScanning)
-            .padding(.horizontal)
-        }
-    }
-
-    // MARK: - NFC
-
-    private func scanForTag(completion: @escaping (String) -> Void) {
-        guard !nfcManager.isScanning else { return }
-
-        let cpName: String = {
-            guard let alarm = alarmManager.activeAlarm,
-                  alarmManager.currentCheckpointIndex < alarm.checkpointIDs.count,
-                  let cp = alarmManager.checkpoint(for: alarm.checkpointIDs[alarmManager.currentCheckpointIndex])
-            else { return "NFC tag" }
-            return cp.name
-        }()
-
-        nfcManager.scan(message: "Hold near \(cpName) tag") { tagID in
-            completion(tagID)
         }
     }
 }
