@@ -21,6 +21,7 @@
 		AA000000000000000000B00C /* CheckpointSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000A00C /* CheckpointSetupView.swift */; };
 		AA000000000000000000B00D /* LocationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000A00D /* LocationView.swift */; };
 		AA000000000000000000B00E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000A00E /* Assets.xcassets */; };
+		AA000000000000000000B00F /* SuccessCheckmarkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000A012 /* SuccessCheckmarkView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,6 +42,7 @@
 		AA000000000000000000A00F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AA000000000000000000A010 /* TagAlarm.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TagAlarm.entitlements; sourceTree = "<group>"; };
 		AA000000000000000000A011 /* TagAlarm.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TagAlarm.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA000000000000000000A012 /* SuccessCheckmarkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuccessCheckmarkView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -121,6 +123,7 @@
 				AA000000000000000000A00B /* ActiveAlarmView.swift */,
 				AA000000000000000000A00C /* CheckpointSetupView.swift */,
 				AA000000000000000000A00D /* LocationView.swift */,
+				AA000000000000000000A012 /* SuccessCheckmarkView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -207,6 +210,7 @@
 				AA000000000000000000B00B /* ActiveAlarmView.swift in Sources */,
 				AA000000000000000000B00C /* CheckpointSetupView.swift in Sources */,
 				AA000000000000000000B00D /* LocationView.swift in Sources */,
+				AA000000000000000000B00F /* SuccessCheckmarkView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

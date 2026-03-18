@@ -61,6 +61,13 @@ struct ActiveAlarmView: View {
                 Spacer()
             }
             .padding()
+
+            // Success checkmark overlay (all checkpoints cleared)
+            if alarmManager.showingCheckmarkAnimation {
+                SuccessCheckmarkView {
+                    alarmManager.dismissAlarm()
+                }
+            }
         }
         .animation(.easeInOut(duration: 0.3), value: alarmManager.lastScanResult != nil)
         .onAppear { startScanning() }

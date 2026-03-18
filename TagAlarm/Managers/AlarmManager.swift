@@ -25,6 +25,7 @@ class AlarmManager: ObservableObject {
 
     // Scan feedback
     @Published var lastScanResult: ScanResult?
+    @Published var showingCheckmarkAnimation: Bool = false
 
     // Notification permission
     @Published var notificationsEnabled: Bool = true
@@ -211,9 +212,11 @@ class AlarmManager: ObservableObject {
         activeHoldCheckpointID = nil
         holdTimeRemaining = 0
         lastScanResult = nil
+        showingCheckmarkAnimation = false
         isAlarmSounding = true
         audioManager.playAlarm(sound: alarm.sound)
         persistActiveAlarm()
+        scheduleNagNotifications()
     }
 
     /// Called when an NFC tag is scanned during an active alarm.
@@ -247,10 +250,6 @@ class AlarmManager: ObservableObject {
         }
 
         // Checkpoint matched
-        lastScanResult = .success
-        haptic(.success)
-        clearScanResultAfterDelay()
-
         audioManager.stop()
         isAlarmSounding = false
         cancelHoldTimer()
@@ -266,7 +265,14 @@ class AlarmManager: ObservableObject {
         persistActiveAlarm()
 
         if currentCheckpointIndex >= alarm.checkpointIDs.count {
-            dismissAlarm()
+            // Final checkpoint — show big checkmark animation, then dismiss
+            showingCheckmarkAnimation = true
+            haptic(.success)
+        } else {
+            // More checkpoints to go
+            lastScanResult = .success
+            haptic(.success)
+            clearScanResultAfterDelay()
         }
     }
 
@@ -281,12 +287,14 @@ class AlarmManager: ObservableObject {
 
         audioManager.stop()
         cancelHoldTimer()
+        cancelNagNotifications()
         activeAlarm = nil
         currentCheckpointIndex = 0
         isAlarmSounding = false
         holdTimeRemaining = 0
         activeHoldCheckpointID = nil
         lastScanResult = nil
+        showingCheckmarkAnimation = false
         persistActiveAlarm()
     }
 
@@ -390,5 +398,42 @@ class AlarmManager: ObservableObject {
     func handleNotification(alarmID: String) {
         guard let alarm = alarms.first(where: { $0.id.uuidString == alarmID && $0.isEnabled }) else { return }
         triggerAlarm(alarm)
+    }
+
+    // MARK: - Nag Notifications (fire even if app is killed)
+
+    private static let nagPrefix = "nag-"
+
+    /// Schedule 60 notifications at 30-second intervals.
+    /// iOS delivers these even if the app is terminated.
+    private func scheduleNagNotifications() {
+        let center = UNUserNotificationCenter.current()
+        let name = activeAlarm?.name ?? "Alarm"
+
+        let messages = [
+            "Your alarm is still active! Open TagAlarm.",
+            "\(name) — you haven't scanned your checkpoints yet!",
+            "Still in bed? Open TagAlarm and scan your tags.",
+            "Nice try. Open TagAlarm to dismiss your alarm.",
+            "\(name) is waiting. Get up and scan!",
+        ]
+
+        for i in 0..<60 {
+            let content = UNMutableNotificationContent()
+            content.title = "TagAlarm"
+            content.body = messages[i % messages.count]
+            content.sound = .default
+            content.interruptionLevel = .timeSensitive
+            content.userInfo = ["alarmID": activeAlarm?.id.uuidString ?? ""]
+
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(30 * (i + 1)), repeats: false)
+            let request = UNNotificationRequest(identifier: "\(Self.nagPrefix)\(i)", content: content, trigger: trigger)
+            center.add(request)
+        }
+    }
+
+    private func cancelNagNotifications() {
+        let ids = (0..<60).map { "\(Self.nagPrefix)\($0)" }
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
     }
 }
