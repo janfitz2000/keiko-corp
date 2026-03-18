@@ -80,17 +80,13 @@ extension NFCManager: NFCTagReaderSessionDelegate {
     }
 
     private func extractTagID(from tag: NFCTag) -> String {
-        switch tag {
-        case .miFare(let t):
-            return t.identifier.map { String(format: "%02x", $0) }.joined()
-        case .iso7816(let t):
-            return t.identifier.map { String(format: "%02x", $0) }.joined()
-        case .iso15693(let t):
-            return t.identifier.map { String(format: "%02x", $0) }.joined()
-        case .feliCa(let t):
-            return t.currentIDm.map { String(format: "%02x", $0) }.joined()
-        @unknown default:
-            return ""
+        let data: Data? = switch tag {
+        case .miFare(let t): t.identifier
+        case .iso7816(let t): t.identifier
+        case .iso15693(let t): t.identifier
+        case .feliCa(let t): t.currentIDm
+        @unknown default: nil
         }
+        return data?.map { String(format: "%02x", $0) }.joined() ?? ""
     }
 }

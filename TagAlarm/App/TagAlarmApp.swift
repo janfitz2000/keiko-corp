@@ -27,13 +27,17 @@ extension Notification.Name {
 }
 
 class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    private func forward(_ userInfo: [AnyHashable: Any]) {
+        let alarmID = userInfo["alarmID"] as? String ?? ""
+        NotificationCenter.default.post(name: .alarmTriggered, object: nil, userInfo: ["alarmID": alarmID])
+    }
+
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        let alarmID = notification.request.content.userInfo["alarmID"] as? String ?? ""
-        NotificationCenter.default.post(name: .alarmTriggered, object: nil, userInfo: ["alarmID": alarmID])
+        forward(notification.request.content.userInfo)
         completionHandler([.sound, .banner])
     }
 
@@ -42,8 +46,7 @@ class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        let alarmID = response.notification.request.content.userInfo["alarmID"] as? String ?? ""
-        NotificationCenter.default.post(name: .alarmTriggered, object: nil, userInfo: ["alarmID": alarmID])
+        forward(response.notification.request.content.userInfo)
         completionHandler()
     }
 }

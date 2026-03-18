@@ -67,42 +67,19 @@ struct ActiveAlarmView: View {
 
     // MARK: - Scan Feedback
 
-    @ViewBuilder
     private func scanFeedback(_ result: ScanResult) -> some View {
-        switch result {
-        case .wrongTag:
-            HStack(spacing: 8) {
-                Image(systemName: "xmark.circle.fill")
-                Text("Wrong tag! Find the right one.")
-            }
-            .font(.headline)
-            .foregroundStyle(.red)
-            .padding()
-            .background(Color.red.opacity(0.15))
-            .clipShape(Capsule())
-
-        case .success:
-            HStack(spacing: 8) {
-                Image(systemName: "checkmark.circle.fill")
-                Text("Checkpoint cleared!")
-            }
-            .font(.headline)
-            .foregroundStyle(.green)
-            .padding()
-            .background(Color.green.opacity(0.15))
-            .clipShape(Capsule())
-
-        case .holdReset:
-            HStack(spacing: 8) {
-                Image(systemName: "clock.arrow.circlepath")
-                Text("Timer reset — more time added")
-            }
-            .font(.headline)
-            .foregroundStyle(.orange)
-            .padding()
-            .background(Color.orange.opacity(0.15))
-            .clipShape(Capsule())
+        let (icon, text, color): (String, String, Color) = switch result {
+        case .wrongTag: ("xmark.circle.fill", "Wrong tag! Find the right one.", .red)
+        case .success: ("checkmark.circle.fill", "Checkpoint cleared!", .green)
+        case .holdReset: ("clock.arrow.circlepath", "Timer reset — more time added", .orange)
         }
+
+        return Label(text, systemImage: icon)
+            .font(.headline)
+            .foregroundStyle(color)
+            .padding()
+            .background(color.opacity(0.15))
+            .clipShape(Capsule())
     }
 
     // MARK: - Checkpoint Progress

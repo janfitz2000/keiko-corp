@@ -25,7 +25,7 @@ struct CheckpointSetupView: View {
                     List {
                         ForEach(alarmManager.checkpoints) { cp in
                             NavigationLink {
-                                EditCheckpointView(checkpoint: cp)
+                                CheckpointFormView(existing: cp)
                             } label: {
                                 CheckpointRow(checkpoint: cp)
                             }
@@ -43,11 +43,13 @@ struct CheckpointSetupView: View {
                 }
             }
             .sheet(isPresented: $showingAdd) {
-                AddCheckpointView()
+                CheckpointFormView()
             }
         }
     }
 }
+
+// MARK: - Row
 
 struct CheckpointRow: View {
     let checkpoint: Checkpoint
@@ -61,18 +63,14 @@ struct CheckpointRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(checkpoint.name)
-                    .font(.body)
 
                 HStack(spacing: 8) {
-                    if checkpoint.isPaired {
-                        Label("Paired", systemImage: "checkmark.circle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.green)
-                    } else {
-                        Label("Not paired", systemImage: "exclamationmark.circle")
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
+                    Label(
+                        checkpoint.isPaired ? "Paired" : "Not paired",
+                        systemImage: checkpoint.isPaired ? "checkmark.circle.fill" : "exclamationmark.circle"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(checkpoint.isPaired ? .green : .red)
 
                     if checkpoint.isHold {
                         Label("\(checkpoint.holdMinutes)m hold", systemImage: "timer")
@@ -85,39 +83,64 @@ struct CheckpointRow: View {
     }
 }
 
-struct AddCheckpointView: View {
+// MARK: - Icon Picker
+
+struct IconPicker: View {
+    @Binding var selection: String
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 12) {
+            ForEach(Checkpoint.icons, id: \.self) { ic in
+                Button {
+                    selection = ic
+                } label: {
+                    Image(systemName: ic)
+                        .font(.title2)
+                        .frame(width: 44, height: 44)
+                        .background(selection == ic ? Color.orange : Color(.systemGray5))
+                        .foregroundStyle(selection == ic ? .white : .primary)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+// MARK: - Unified Add/Edit Form
+
+struct CheckpointFormView: View {
     @EnvironmentObject var alarmManager: AlarmManager
     @EnvironmentObject var nfcManager: NFCManager
     @Environment(\.dismiss) private var dismiss
 
-    @State private var name = ""
-    @State private var icon = "tag"
-    @State private var isHold = false
-    @State private var holdMinutes = 5
-    @State private var nfcTagID = ""
-    @State private var showIconPicker = false
+    @State private var checkpoint: Checkpoint
+    private let isEditing: Bool
 
-    private let icons = [
-        "tag", "refrigerator", "door.left.hand.open", "envelope",
-        "shower", "desktopcomputer", "fork.knife", "bed.double",
-        "car", "figure.walk", "cup.and.saucer", "tshirt",
-    ]
+    init(existing: Checkpoint? = nil) {
+        if let existing {
+            _checkpoint = State(initialValue: existing)
+            isEditing = true
+        } else {
+            _checkpoint = State(initialValue: Checkpoint(name: ""))
+            isEditing = false
+        }
+    }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("Name") {
-                    TextField("e.g. Fridge, Front Door", text: $name)
+        let form = Form {
+            Section("Name") {
+                TextField("e.g. Fridge, Front Door", text: $checkpoint.name)
 
-                    // Quick suggestions
+                if !isEditing {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack {
-                            ForEach(Checkpoint.examples, id: \.0) { example in
+                            ForEach(Checkpoint.suggestions, id: \.0) { name, icon in
                                 Button {
-                                    name = example.0
-                                    icon = example.1
+                                    checkpoint.name = name
+                                    checkpoint.icon = icon
                                 } label: {
-                                    Label(example.0, systemImage: example.1)
+                                    Label(name, systemImage: icon)
                                         .font(.caption)
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 6)
@@ -129,187 +152,106 @@ struct AddCheckpointView: View {
                         }
                     }
                 }
-
-                Section("Icon") {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 12) {
-                        ForEach(icons, id: \.self) { ic in
-                            Button {
-                                icon = ic
-                            } label: {
-                                Image(systemName: ic)
-                                    .font(.title2)
-                                    .frame(width: 44, height: 44)
-                                    .background(icon == ic ? Color.orange : Color(.systemGray5))
-                                    .foregroundStyle(icon == ic ? .white : .primary)
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-
-                Section {
-                    if nfcTagID.isEmpty {
-                        Button {
-                            nfcManager.scan(message: "Hold near the NFC tag for \(name.isEmpty ? "this checkpoint" : name)") { tagID in
-                                nfcTagID = tagID
-                            }
-                        } label: {
-                            Label("Scan NFC Tag", systemImage: "wave.3.right")
-                        }
-                    } else {
-                        HStack {
-                            Label("Tag paired", systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                            Spacer()
-                            Button("Re-scan") {
-                                nfcManager.scan { tagID in
-                                    nfcTagID = tagID
-                                }
-                            }
-                            .font(.caption)
-                        }
-
-                        Text("ID: \(nfcTagID)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if let error = nfcManager.errorMessage {
-                        Text(error)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
-                } header: {
-                    Text("NFC Tag")
-                } footer: {
-                    Text("Place an NFC sticker at this location and scan it to pair.")
-                }
-
-                Section {
-                    Toggle("Hold checkpoint", isOn: $isHold)
-
-                    if isHold {
-                        Stepper("Hold time: \(holdMinutes) min", value: $holdMinutes, in: 1...30)
-                    }
-                } footer: {
-                    if isHold {
-                        Text("After scanning this checkpoint, the alarm will re-trigger after \(holdMinutes) minutes unless you scan the next checkpoint or re-scan this one for more time.")
-                    }
-                }
-            }
-            .navigationTitle("Add Checkpoint")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        let cp = Checkpoint(
-                            name: name,
-                            nfcTagID: nfcTagID,
-                            icon: icon,
-                            isHold: isHold,
-                            holdMinutes: holdMinutes
-                        )
-                        alarmManager.addCheckpoint(cp)
-                        dismiss()
-                    }
-                    .disabled(name.isEmpty || nfcTagID.isEmpty)
-                }
-            }
-        }
-    }
-}
-
-struct EditCheckpointView: View {
-    @EnvironmentObject var alarmManager: AlarmManager
-    @EnvironmentObject var nfcManager: NFCManager
-    @Environment(\.dismiss) private var dismiss
-
-    @State var checkpoint: Checkpoint
-
-    private let icons = [
-        "tag", "refrigerator", "door.left.hand.open", "envelope",
-        "shower", "desktopcomputer", "fork.knife", "bed.double",
-        "car", "figure.walk", "cup.and.saucer", "tshirt",
-    ]
-
-    var body: some View {
-        Form {
-            Section("Name") {
-                TextField("Name", text: $checkpoint.name)
             }
 
             Section("Icon") {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 12) {
-                    ForEach(icons, id: \.self) { ic in
-                        Button {
-                            checkpoint.icon = ic
-                        } label: {
-                            Image(systemName: ic)
-                                .font(.title2)
-                                .frame(width: 44, height: 44)
-                                .background(checkpoint.icon == ic ? Color.orange : Color(.systemGray5))
-                                .foregroundStyle(checkpoint.icon == ic ? .white : .primary)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
+                IconPicker(selection: $checkpoint.icon)
             }
 
-            Section("NFC Tag") {
-                if checkpoint.isPaired {
-                    HStack {
-                        Label("Paired", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                        Spacer()
-                        Button("Re-scan") {
-                            nfcManager.scan { tagID in
-                                checkpoint.nfcTagID = tagID
-                            }
-                        }
-                        .font(.caption)
-                    }
-                    Text("ID: \(checkpoint.nfcTagID)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Button {
-                        nfcManager.scan { tagID in
-                            checkpoint.nfcTagID = tagID
-                        }
-                    } label: {
-                        Label("Scan NFC Tag", systemImage: "wave.3.right")
-                    }
+            Section {
+                nfcSection
+            } header: {
+                Text("NFC Tag")
+            } footer: {
+                if !checkpoint.isPaired {
+                    Text("Place an NFC sticker at this location and scan it to pair.")
                 }
             }
 
             Section {
                 Toggle("Hold checkpoint", isOn: $checkpoint.isHold)
+
                 if checkpoint.isHold {
                     Stepper("Hold time: \(checkpoint.holdMinutes) min", value: $checkpoint.holdMinutes, in: 1...30)
                 }
+            } footer: {
+                if checkpoint.isHold {
+                    Text("The alarm will re-trigger after \(checkpoint.holdMinutes) minutes unless you scan the next checkpoint or re-scan this one.")
+                }
             }
 
-            Section {
-                Button("Delete Checkpoint", role: .destructive) {
-                    alarmManager.deleteCheckpoint(id: checkpoint.id)
-                    dismiss()
+            if isEditing {
+                Section {
+                    Button("Delete Checkpoint", role: .destructive) {
+                        alarmManager.deleteCheckpoint(id: checkpoint.id)
+                        dismiss()
+                    }
                 }
             }
         }
-        .navigationTitle("Edit Checkpoint")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Save") {
-                    alarmManager.updateCheckpoint(checkpoint)
-                    dismiss()
+
+        if isEditing {
+            form
+                .navigationTitle("Edit Checkpoint")
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") {
+                            alarmManager.updateCheckpoint(checkpoint)
+                            dismiss()
+                        }
+                    }
                 }
+        } else {
+            NavigationStack {
+                form
+                    .navigationTitle("Add Checkpoint")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") { dismiss() }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Save") {
+                                alarmManager.addCheckpoint(checkpoint)
+                                dismiss()
+                            }
+                            .disabled(checkpoint.name.isEmpty || !checkpoint.isPaired)
+                        }
+                    }
             }
+        }
+    }
+
+    // MARK: - NFC Section
+
+    @ViewBuilder
+    private var nfcSection: some View {
+        if checkpoint.isPaired {
+            HStack {
+                Label("Tag paired", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Spacer()
+                Button("Re-scan") {
+                    nfcManager.scan { checkpoint.nfcTagID = $0 }
+                }
+                .font(.caption)
+            }
+            Text("ID: \(checkpoint.nfcTagID)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        } else {
+            Button {
+                let label = checkpoint.name.isEmpty ? "this checkpoint" : checkpoint.name
+                nfcManager.scan(message: "Hold near the NFC tag for \(label)") { checkpoint.nfcTagID = $0 }
+            } label: {
+                Label("Scan NFC Tag", systemImage: "wave.3.right")
+            }
+        }
+
+        if let error = nfcManager.errorMessage {
+            Text(error)
+                .font(.caption)
+                .foregroundStyle(.red)
         }
     }
 }
